@@ -3,15 +3,26 @@
 symbols:
   - EURUSD
   - GBPUSD
+  - USDJPY
   - BTCUSD
+
+pip_values:
+  EURUSD: 0.0001
+  GBPUSD: 0.0001
+  USDJPY: 0.01
+  BTCUSD: 1.0
 
 timeframe: 5             # In minutes (M5)
 lookback_bars: 150
 poll_interval: 10        # seconds
 
+trading_params:
+  sl_atr_multiplier: 1.5
+  rr_ratio: 2.0
+  trailing_stop_pips: 15 
+
 risk:
   risk_per_trade: 0.01
-  pip_value: 0.0001
   max_lot: 1.0
 
 portfolio:

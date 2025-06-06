@@ -38,13 +38,6 @@ class BaseStrategy(ABC):
         pass
 
     @abstractmethod
-    def execute_trade(self, signal: Dict[str, Any]) -> None:
-        """
-        Execute the trade based on the signal using a broker interface.
-        """
-        pass
-
-    @abstractmethod
     async def log_performance(self, trade_tracker: Any, symbol: str) -> None:
         """
         Log or persist the strategy's performance.

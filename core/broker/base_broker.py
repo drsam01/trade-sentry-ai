@@ -91,3 +91,17 @@ class BaseBroker(ABC):
     def get_latest_price(self, symbol: str) -> float:
         """Fetch the latest mid-price (bid+ask)/2 for the given symbol."""
         pass
+
+    @abstractmethod
+    def modify_sl(self, order_id: str, new_sl: float) -> bool:
+        """
+        Modify stop loss for an open trade.
+
+        Args:
+            order_id (str): Broker-assigned trade/ticket ID.
+            new_sl (float): New stop loss price.
+
+        Returns:
+            bool: True if successful, else False.
+        """
+        pass

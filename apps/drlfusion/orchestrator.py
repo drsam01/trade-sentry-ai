@@ -40,7 +40,7 @@ class DRLFusionTrader:
         self.risk_manager = RiskManager(balance=initial_balance, config=config["risk"])
         self.portfolio_manager = PortfolioManager(config["portfolio"])
         self.trade_tracker = TradeTracker()
-        self.trade_watcher = TradeWatcher(self.risk_manager.apply_trailing_stop)
+        self.trade_watcher = TradeWatcher(self.risk_manager.apply_trailing_stop, self.broker)
 
         self.strategy = DRLFusionStrategy(config)
         self.aggregator = TimeframeAggregator([self.timeframe])
@@ -86,11 +86,11 @@ class DRLFusionTrader:
 
         direction = signal["direction"]
         price, sl, tp = signal["price"], signal["sl"], signal["tp"]
-        stop_loss_pips = abs(price - sl) / self.config["risk"].get("pip_value", 0.0001)
+        stop_loss_pips = abs(price - sl) / self.config["pip_values"].get(self.symbol, 0.0001)
 
         lot = self.risk_manager.compute_lot_size(
             stop_loss_pips=stop_loss_pips,
-            pip_value=self.config["risk"].get("pip_value", 0.0001),
+            pip_value=self.config["pip_values"].get(self.symbol, 0.0001),
             max_lot=self.config["risk"].get("max_lot", 1.0)
         )
 
@@ -103,8 +103,6 @@ class DRLFusionTrader:
                 tp=tp,
                 comment="DRLFusion Trade"
             )
-
-            self.strategy.execute_trade(signal)
             send_telegram_alert(f"📈 DRLFusion {direction.upper()} trade on {self.symbol}")
 
             if trade_id := result.get("order"):
@@ -120,7 +118,8 @@ class DRLFusionTrader:
                     "tag": signal.get("tag", "drlfusion_trade"),
                     "strategy": "DRLFusion",
                     "status": "open",
-                    "ticket": trade_id
+                    "ticket": trade_id,
+                    "trailing_stop": signal.get("trailing_stop")
                 }
 
                 self.trade_tracker.register_open_trade(trade_id, trade_data)
@@ -143,7 +142,6 @@ class DRLFusionTrader:
                     timestamp=datetime.now(timezone.utc).isoformat()
                 )
                 send_telegram_alert(f"💥 Closed DRLFusion trade on {self.symbol} @ {price:.5f}")
-
 
 class DRLFusionAsyncOrchestrator:
     def __init__(self, trading_plan: List[Dict[str, Any]], config: Dict[str, Any], broker: BaseBroker):

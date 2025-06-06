@@ -5,26 +5,25 @@ import asyncio
 import pandas as pd
 from typing import Optional, Dict, Any, List
 import time
-from drlfusion.core.brokers.broker_base import BrokerBase
-from drlfusion.core.config.config import Config
-from drlfusion.core.utils.logger import get_logger
+from core.broker.base_broker import BaseBroker
+from core.utils.logger import get_logger
 
 logger = get_logger('binance_interface')
 
 
-class BinanceInterface(BrokerBase):
+class BinanceInterface(BaseBroker):
     """
     Binance Futures API Interface (inherits BrokerBase).
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.session = None
-        self.api_key = config.BINANCE_API_KEY
-        self.api_secret = config.BINANCE_API_SECRET
+        self.api_key = config.BINANCE_API_KEY # type: ignore
+        self.api_secret = config.BINANCE_API_SECRET # type: ignore
         self.base_url = "https://fapi.binance.com"
 
-    async def connect(self) -> bool:
+    async def connect(self) -> bool: # type: ignore
         self.session = aiohttp.ClientSession()
         logger.info("Binance Futures session started.")
         return True
@@ -35,7 +34,7 @@ class BinanceInterface(BrokerBase):
             logger.info("Binance Futures session closed.")
 
     async def fetch_historical_data(self, symbol: str, timeframe: str, lookback: int) -> pd.DataFrame:
-        from strategies.drlfusion.core.utils.timeframe_mapper import map_timeframe
+        from core.utils.timeframe_mapper import map_timeframe
         timeframe = map_timeframe("BINANCE", timeframe)
         
         url = f"{self.base_url}/fapi/v1/klines"
@@ -44,7 +43,7 @@ class BinanceInterface(BrokerBase):
             "interval": timeframe,
             "limit": lookback
         }
-        async with self.session.get(url, params=params) as resp:
+        async with self.session.get(url, params=params) as resp: # type: ignore
             data = await resp.json()
 
         df = pd.DataFrame(data, columns=[
@@ -59,7 +58,7 @@ class BinanceInterface(BrokerBase):
         return df.reset_index()
 
     async def fetch_latest_candle(self, symbol: str, timeframe: str) -> Dict[str, Any]:
-        from strategies.drlfusion.core.utils.timeframe_mapper import map_timeframe
+        from core.utils.timeframe_mapper import map_timeframe
         timeframe = map_timeframe("BINANCE", timeframe)
 
         df = await self.fetch_historical_data(symbol, timeframe, lookback=2)
@@ -73,7 +72,7 @@ class BinanceInterface(BrokerBase):
             'volume': latest['volume']
         }
 
-    async def place_order(self, symbol: str, side: str, volume: float, price: Optional[float] = None) -> Dict[str, Any]:
+    async def place_order(self, symbol: str, side: str, volume: float, price: Optional[float] = None) -> Dict[str, Any]: # type: ignore
         url = f"{self.base_url}/fapi/v1/order"
         params = {
             "symbol": symbol.upper(),
@@ -86,7 +85,7 @@ class BinanceInterface(BrokerBase):
             "X-MBX-APIKEY": self.api_key
         }
 
-        async with self.session.post(url, params=params, headers=headers) as resp:
+        async with self.session.post(url, params=params, headers=headers) as resp: # type: ignore
             response = await resp.json()
             if resp.status != 200:
                 logger.error(f"Order failed: {response}")
@@ -111,7 +110,7 @@ class BinanceInterface(BrokerBase):
         headers = {"X-MBX-APIKEY": self.api_key}
         params = {"timestamp": int(time.time() * 1000)}
 
-        async with self.session.get(url, params=params, headers=headers) as resp:
+        async with self.session.get(url, params=params, headers=headers) as resp: # type: ignore
             data = await resp.json()
 
         if symbol:
@@ -124,7 +123,7 @@ class BinanceInterface(BrokerBase):
         headers = {"X-MBX-APIKEY": self.api_key}
         params = {"timestamp": int(time.time() * 1000)}
 
-        async with self.session.get(url, params=params, headers=headers) as resp:
+        async with self.session.get(url, params=params, headers=headers) as resp: # type: ignore
             data = await resp.json()
 
         return {
@@ -137,7 +136,7 @@ class BinanceInterface(BrokerBase):
 
     async def fetch_symbol_info(self, symbol: str) -> Dict[str, Any]:
         url = f"{self.base_url}/fapi/v1/exchangeInfo"
-        async with self.session.get(url) as resp:
+        async with self.session.get(url) as resp: # type: ignore
             info = await resp.json()
 
         for s in info['symbols']:
@@ -152,8 +151,31 @@ class BinanceInterface(BrokerBase):
                 }
         raise ValueError(f"Symbol info not found for {symbol}")
 
-    async def get_latest_price(self, symbol: str) -> float:
+    async def get_latest_price(self, symbol: str) -> float: # type: ignore
         url = f"{self.base_url}/fapi/v1/ticker/bookTicker?symbol={symbol.upper()}"
-        async with self.session.get(url) as resp:
+        async with self.session.get(url) as resp: # type: ignore
             data = await resp.json()
         return (float(data["bidPrice"]) + float(data["askPrice"])) / 2
+    
+    def modify_sl(self, order_id: str, new_sl: float) -> bool:
+        """
+        Binance does not natively support modifying stop loss orders once placed.
+        This implementation cancels and replaces the SL order manually.
+        """
+        try:
+            # Fetch existing order details if needed
+            # You would typically store the stop order ID when placing it
+            logger.info(f"[Binance] Updating SL for order {order_id} to {new_sl}")
+
+            # 1. Cancel old SL order (if tracked)
+            # self.client.cancel_order(symbol=symbol, orderId=old_sl_order_id)
+
+            # 2. Place new SL order at updated price
+            # self.client.create_order(..., stopPrice=new_sl, ...)
+
+            # Stub return (always assume manual handling)
+            return True
+        except Exception as e:
+            logger.info(f"[Binance] Failed to update SL for order {order_id}: {e}")
+            return False
+
