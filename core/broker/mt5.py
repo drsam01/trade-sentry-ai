@@ -236,4 +236,27 @@ class MT5Broker(BaseBroker):
             raise ValueError(f"Unable to fetch tick data for symbol: {symbol}")
         return (tick.bid + tick.ask) / 2
 
+    def modify_sl(self, order_id: str, new_sl: float) -> bool:
+        """
+        Modify the SL of an open position in MetaTrader 5.
+        """
+        position = mt5.positions_get(ticket=int(order_id)) # type: ignore
+        if not position or len(position) == 0:
+            print(f"[MT5] No position found for ticket {order_id}")
+            return False
+
+        pos = position[0]
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": pos.ticket,
+            "sl": round(new_sl, 5),
+            "tp": pos.tp,
+            "symbol": pos.symbol,
+            "magic": pos.magic,
+            "comment": "Trailing SL Update"
+        }
+
+        result = mt5.order_send(request) # type: ignore
+        return result.retcode == mt5.TRADE_RETCODE_DONE
+
 

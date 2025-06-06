@@ -29,10 +29,6 @@ class DRLFusionStrategy(BaseStrategy):
         self.conf_threshold: float = config.get("ensemble_conf_threshold", 0.5)
         self.last_signal: Optional[Dict[str, Any]] = None
 
-        self.trend_active = False
-        self.trend_direction: Optional[str] = None
-        self.trend_entry_price: Optional[float] = None
-
     def load_data(self, df: pd.DataFrame) -> None:
         self.df = df.copy()
         self.helper.prepare(df)
@@ -63,10 +59,16 @@ class DRLFusionStrategy(BaseStrategy):
         atr = self.df["ATR14"].iloc[current_index]
         sl_mult = self.config.get("trading_params", {}).get("sl_atr_multiplier", 2.0)
         rr_mult = self.config.get("trading_params", {}).get("rr_ratio", 2.0)
+        tp_mult = rr_mult * sl_mult
 
         sl = price - sl_mult * atr if direction == "long" else price + sl_mult * atr
-        tp = price + rr_mult * sl_mult * atr if direction == "long" else price - rr_mult * sl_mult * atr
+        tp = price + tp_mult * atr if direction == "long" else price - tp_mult * atr
 
+        trailing_pips = self.config.get("trading_params", {}).get("trailing_stop", None)
+        pip_value = self.config.get("pip_values", {}).get(self.config.get("symbol"), 0.0001)
+
+        trailing_stop = trailing_pips * pip_value if trailing_pips else None
+        
         signal = {
             "type": "market",
             "direction": direction,
@@ -74,7 +76,8 @@ class DRLFusionStrategy(BaseStrategy):
             "sl": sl,
             "tp": tp,
             "confidence": confidence,
-            "tag": "drlfusion_ensemble"
+            "tag": "drlfusion_ensemble",
+            "trailing_stop": trailing_stop
         }
 
         self.last_signal = signal
@@ -94,34 +97,10 @@ class DRLFusionStrategy(BaseStrategy):
         logger.info(f"[DRLFusion] Generated {len(signals)} signals.")
         return signals
 
-    def execute_trade(self, signal: Dict[str, Any]) -> None:
-        self.last_signal = signal
-
-        tag = signal.get("tag", "")
-        direction = signal.get("direction", "")
-        price = signal.get("price")
-        sl = signal.get("sl")
-        tp = signal.get("tp")
-        confidence = signal.get("confidence")
-
-        logger.info(
-            f"[DRLFusion] Executed {tag.upper()} trade | "
-            f"Direction: {direction}, Entry: {price}, SL: {sl}, TP: {tp}, Confidence: {confidence:.2f}"
-        )
-
-        self.trend_active = True
-        self.trend_direction = direction
-        self.trend_entry_price = price
-
-        logger.debug(f"[DRLFusion] Trend state updated: {self.trend_direction} @ {self.trend_entry_price}")
-
     async def log_performance(self, trade_tracker: Any, symbol: str) -> None:
         summary = trade_tracker.get_closed_summary(symbol)
         logger.info(f"[{symbol}] DRLFusion Performance: {summary}")
 
     def reset_state(self) -> None:
         self.last_signal = None
-        self.trend_active = False
-        self.trend_direction = None
-        self.trend_entry_price = None
         logger.info("[DRLFusion] Strategy state reset.")
