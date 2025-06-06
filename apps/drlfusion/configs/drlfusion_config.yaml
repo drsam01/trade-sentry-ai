@@ -1,63 +1,52 @@
-# File: configs/drlfusion_config.yaml
+# === Trading Parameters ===
+timeframe: M5             # Aggregated timeframe used by TimeframeAggregator
+lookback_bars: 100        # Number of bars to look back when feeding strategy
 
-symbols:
-  - EURUSD
-  - GBPUSD
-  - USDJPY
-  - BTCUSD
+poll_interval: 10         # Seconds between each process_tick loop
 
+# === Risk Management ===
+risk:
+  risk_per_trade: 0.01     # Fraction of balance to risk per trade
+  max_lot: 1.0             # Max lot size per trade
+  min_lot: 0.01            # Minimum allowed lot size
+
+# === Portfolio Constraints ===
+portfolio:
+  total_budget: 100000     # Total budget for all symbols
+  max_exposure_per_symbol: 0.3  # Max 30% of portfolio on any one symbol
+
+# === Trailing Stop Settings ===
+trailing_stop:
+  enabled: true
+  trigger_pips: 15         # When in profit by 15 pips, start trailing
+  trail_pips: 10           # Maintain 10 pips distance as price moves
+
+# === Pip Values per Symbol ===
 pip_values:
   EURUSD: 0.0001
   GBPUSD: 0.0001
   USDJPY: 0.01
   BTCUSD: 1.0
+  XAUUSD: 0.1
 
-timeframe: 5             # In minutes (M5)
-lookback_bars: 150
-poll_interval: 10        # seconds
-
-trading_params:
-  sl_atr_multiplier: 1.5
-  rr_ratio: 2.0
-  trailing_stop_pips: 15 
-
-risk:
-  risk_per_trade: 0.01
-  max_lot: 1.0
-
-portfolio:
-  total_budget: 10000.0
-  max_total_risk: 0.05
-  max_symbols: 3
-
-trailing_stop:
-  enabled: true
-  trigger_pips: 15
-  step_pips: 5
-
-model_paths:
-  ppo: "models/ppo_EURUSD.pt"
-  a2c: "models/a2c_EURUSD.pt"
-  dqn: "models/dqn_EURUSD.pt"
-  sac: "models/sac_EURUSD.pt"
-
-global_hyperparams:
-  candle_window: 30
-
-ensemble_conf_threshold: 0.5
-
+# === Schedule Configuration ===
 schedule_config:
   rebalance:
     enabled: true
-    frequency: daily
-    time: "00:15"
+    frequency: weekly         # Options: daily, weekly
+    time: "01:00"             # UTC time to run rebalancing
+    day_of_week: "sun"        # Required for weekly frequency
+
   performance_log:
     enabled: true
     frequency: daily
     time: "23:55"
 
-broker:
-  login: 12345678
-  password: your_password
-  server: "MetaQuotes-Demo"
-  path: "C:/Program Files/MetaTrader 5/terminal64.exe"
+# === Strategy Settings (Optional block used by DRLFusionStrategy) ===
+strategy:
+  confidence_threshold: 0.7    # Probability threshold to trigger trade
+  sl_multiplier: 1.5           # ATR multiplier for stop loss
+  rr_ratio: 2.0                # Risk-to-reward ratio for take profit
+  use_soft_voting: true        # Whether to use ensemble of agents
+  enable_partial_close: true   # Allow partial take profits
+  max_open_trades: 3           # Cap concurrent trades per symbol

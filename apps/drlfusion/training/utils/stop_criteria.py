@@ -1,10 +1,10 @@
 # File: drlfusion/modelling/utils/stop_criteria.py
 
-from drlfusion.modelling.utils.early_stopping import EarlyStoppingMonitor
-from drlfusion.modelling.utils.convergence_monitor import ConvergenceMonitor
-import logging
+from .early_stopping import EarlyStoppingMonitor
+from .convergence_monitor import ConvergenceMonitor
+from core.utils.logger import get_logger
 
-logger = logging.getLogger("stop_criteria")
+logger = get_logger(__name__)
 
 
 class TrainingStopCriteria:
@@ -20,8 +20,8 @@ class TrainingStopCriteria:
         self,
         early_stop: bool = True,
         convergence: bool = False,
-        early_stop_params: dict = None,
-        convergence_params: dict = None,
+        early_stop_params: dict = None, # type: ignore
+        convergence_params: dict = None, # type: ignore
     ):
         self.use_early_stop = early_stop
         self.use_convergence = convergence
@@ -33,7 +33,7 @@ class TrainingStopCriteria:
         self,
         epoch: int,
         train_reward: float,
-        val_metric: float = None,
+        val_metric: float = None, # type: ignore
     ) -> bool:
         """
         Run all active stopping checks.

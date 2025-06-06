@@ -15,13 +15,13 @@ with built-in support for:
 - Still compatible with both on-policy and off-policy agents
 """
 from typing import Callable, List, Tuple, Dict, Union, Optional
-from drlfusion.modelling.utils.rollout_tools import (
+from drlfusion.training.utils.rollout_tools import (
     collect_on_policy,
     collect_off_policy,
     build_gae_batch,
     build_replay_batch
 )
-from drlfusion.core.utils.logger import get_logger
+from core.utils.logger import get_logger
 import numpy as np
 
 logger = get_logger("rollout_manager")
@@ -144,7 +144,7 @@ class RolloutManager:
             Dict: Training-ready batch
         """
         if self.on_policy:
-            return build_gae_batch(memory, gamma=self.gamma, lam=self.lam, is_ppo=self.is_ppo)
+            return build_gae_batch(memory, gamma=self.gamma, lam=self.lam, is_ppo=self.is_ppo) # type: ignore
         else:
             return build_replay_batch(self.replay_buffer)
 

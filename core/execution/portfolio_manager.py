@@ -24,7 +24,7 @@ class PortfolioManager:
         self.max_trades_global = config.get("max_trades_global", 10)
         self.max_exposure_per_symbol = config.get("max_exposure_per_symbol", 1.0)  # fallback per symbol
         self.max_total_exposure = config.get("max_total_exposure", 10.0)  # in lots
-        self.total_budget = config.get("total_budget", 10.0)
+        self.total_budget = config.get("total_budget", 1000.0)
 
         self.symbol_budget_limits: Dict[str, float] = config.get("symbol_budgets", {}) # type: ignore
         self.open_positions: List[Dict] = []  # Active trades

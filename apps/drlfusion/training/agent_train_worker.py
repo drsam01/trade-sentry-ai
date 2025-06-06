@@ -5,23 +5,27 @@ import json
 import argparse
 import pandas as pd
 import yaml
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
-from apps.drlfusion.modelling.envs.simulated_trading_env import SimulatedTradingEnv
+from apps.drlfusion.envs.simulated_trading_env import SimulatedTradingEnv
 
-from drlfusion.modelling.agents.managers.ppo_manager import PPOManager
-from drlfusion.modelling.agents.managers.dqn_manager import DQNManager
-from drlfusion.modelling.agents.managers.a2c_manager import A2CManager
-from drlfusion.modelling.agents.managers.sac_manager import SACManager
+from apps.drlfusion.agents.managers.ppo_manager import PPOManager
+from apps.drlfusion.agents.managers.dqn_manager import DQNManager
+from apps.drlfusion.agents.managers.a2c_manager import A2CManager
+from apps.drlfusion.agents.managers.sac_manager import SACManager
+from apps.drlfusion.agents.trainers.ppo_trainer import PPOTrainer
+from apps.drlfusion.agents.trainers.dqn_trainer import DQNTrainer
+from apps.drlfusion.agents.trainers.a2c_trainer import A2CTrainer
+from apps.drlfusion.agents.trainers.sac_trainer import SACTrainer
 
-from drlfusion.modelling.agents.trainers.ppo_trainer import PPOTrainer
-from drlfusion.modelling.agents.trainers.dqn_trainer import DQNTrainer
-from drlfusion.modelling.agents.trainers.a2c_trainer import A2CTrainer
-from drlfusion.modelling.agents.trainers.sac_trainer import SACTrainer
+from core.utils.config_loader import load_config
+from core.utils.data_loader import load_raw_data
+#from core.utils.data_prep import preprocess_data
 
-from drlfusion.modelling.utils.data_loader import load_raw_data
-from drlfusion.modelling.utils.data_prep import preprocess_data
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, 'modelling/data')
+MODELS_DIR = os.path.join(BASE_DIR, 'modelling/models')
 
 
 # === Registry to associate agent types with their manager and trainer classes ===
@@ -49,7 +53,7 @@ def load_optimized_hparams(
     symbol: str,
     timeframe: str,
     models_dir: str,
-    config: Config,
+    config: Dict[str, Any],
     source: str = "file"
 ) -> Dict[str, Dict]:
     """
@@ -172,53 +176,23 @@ def load_yaml_config(path: str = "drlfusion/configs/agents_training_config.yaml"
         return yaml.safe_load(f)
 
 
-def train_agent_worker(
-    symbol: str,
-    timeframe: str,
-    agent_type: str,
-    overrides: Optional[Dict] = None,
-    hparam_source: str = "yaml"
-) -> str:
+def train_agent_worker(symbol: str, timeframe: str, agent_type: str) -> str:
     """
     Main training pipeline for any DRL agent with modular config source support.
     - Trains a single DRL agent for a given symbol, timeframe, and agent type.
-    - Loads optimized hyperparameters if available; otherwise falls back to config defaults.
 
     Args:
         symbol (str): Trading symbol to train on (e.g., "EURUSD").
         timeframe (str): Timeframe to train on (e.g., "M15").
         agent_type (str): Agent type (e.g., "ppo", "dqn").
-        overrides (Optional[Dict]): Additional manual override for any config values.
-        hparam_source (str): One of [yaml, config, file]
 
     Returns:
         str: Status message with model save location.
     """
-    overrides = overrides or {}
-    agent_type = agent_type.lower()
-
-    if agent_type not in AGENT_REGISTRY:
-        raise ValueError(f"Unsupported agent type: {agent_type}. Must be one of: {list(AGENT_REGISTRY.keys())}")
-
-    # Initialize a temporary config to locate model directory
-    base_config = Config()
-
-    # Load hyperparameters from chosen source
-    hparams = load_optimized_hparams(
-        agent_type=agent_type, 
-        symbol=symbol, 
-        timeframe=timeframe, 
-        models_dir=base_config.MODELS_DIR, 
-        config=base_config, 
-        source=hparam_source
-    )
-
-    # Merge override config values
-    combined_overrides = {**hparams.get("agent_config", {}), **hparams.get("training_config", {}), **overrides}
-    config = Config(symbol=symbol, timeframe=timeframe, overrides=combined_overrides)
+    config_dict = load_config
 
     # Load training data and wrap in DRLFusion environment
-    df = load_training_dataframe(symbol, timeframe, config)
+    df = load_training_dataframe(symbol, timeframe, config_dict)
     env = SimulatedTradingEnv(df, config)
 
     # Define model artifacts save directory path

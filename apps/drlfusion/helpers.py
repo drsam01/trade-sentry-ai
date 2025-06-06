@@ -64,7 +64,7 @@ class DRLFusionHelper:
 
     def get_window_features(self, current_index: int) -> np.ndarray:
         """
-        Extract normalized flat observation vector ending at current_index.
+        Extract normalized flat observation vector of candle window size ending at current_index.
 
         Args:
             current_index (int): Index of last included row
