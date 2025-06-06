@@ -1,0 +1,29 @@
+# File: apps/drlfusion/envs/env_config.yaml
+
+global_hyperparams:
+  regime_filtering: true
+  reward_scale: 1.0
+  volatility_target: 0.02
+
+model_training_config:
+  candle_window: 30
+  max_steps: 1000
+  time_skip: 1
+  volatility_window: 60
+
+risk_limits:
+  max_leverage: 5
+  min_equity: 100
+
+trading_params:
+  initial_account_balance: 10000
+  max_hold_duration: 50
+  risk_percentage: 0.01
+  sl_atr_multiplier: 1.5
+  rr_ratio: 1.5
+  transaction_cost: 0.0002
+  tsl_activation_atr: 1.5
+  tsl_break_even: true
+  tsl_step_atr: 0.5
+  min_conf_threshold: 0.6
+

@@ -1,0 +1,52 @@
+# File: configs/drlfusion_config.yaml
+
+symbols:
+  - EURUSD
+  - GBPUSD
+  - BTCUSD
+
+timeframe: 5             # In minutes (M5)
+lookback_bars: 150
+poll_interval: 10        # seconds
+
+risk:
+  risk_per_trade: 0.01
+  pip_value: 0.0001
+  max_lot: 1.0
+
+portfolio:
+  total_budget: 10000.0
+  max_total_risk: 0.05
+  max_symbols: 3
+
+trailing_stop:
+  enabled: true
+  trigger_pips: 15
+  step_pips: 5
+
+model_paths:
+  ppo: "models/ppo_EURUSD.pt"
+  a2c: "models/a2c_EURUSD.pt"
+  dqn: "models/dqn_EURUSD.pt"
+  sac: "models/sac_EURUSD.pt"
+
+global_hyperparams:
+  candle_window: 30
+
+ensemble_conf_threshold: 0.5
+
+schedule_config:
+  rebalance:
+    enabled: true
+    frequency: daily
+    time: "00:15"
+  performance_log:
+    enabled: true
+    frequency: daily
+    time: "23:55"
+
+broker:
+  login: 12345678
+  password: your_password
+  server: "MetaQuotes-Demo"
+  path: "C:/Program Files/MetaTrader 5/terminal64.exe"

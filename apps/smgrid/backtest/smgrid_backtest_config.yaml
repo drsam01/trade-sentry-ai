@@ -1,0 +1,32 @@
+walk_forward:
+  lookback: 500
+  horizon: 100
+  top_n: 1
+
+variants:
+  - symbol: EURUSD
+    csv: data/EURUSD.csv
+    atr_multiplier: 1.0
+    risk: 0.01
+    pip_value: 10
+    balance: 10000
+    max_lot: 1
+    rr_ratio: 1.0
+
+  - symbol: EURUSD
+    csv: data/EURUSD.csv
+    atr_multiplier: 1.5
+    risk: 0.02
+    pip_value: 10
+    balance: 10000
+    max_lot: 1
+    rr_ratio: 2.0
+
+  - symbol: EURUSD
+    csv: data/EURUSD.csv
+    atr_multiplier: 2.0
+    risk: 0.03
+    pip_value: 10
+    balance: 10000
+    max_lot: 1
+    rr_ratio: 2.5
