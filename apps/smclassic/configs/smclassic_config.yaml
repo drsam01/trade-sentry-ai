@@ -1,0 +1,38 @@
+broker:
+  login: 12345678
+  password: "your-password"
+  server: "MetaQuotes-Demo"
+  path: "C:/Program Files/MetaTrader 5/terminal64.exe"
+
+risk:
+  risk_percent: 1.0
+  account_currency: "USD"
+
+strategy:
+  sl_buffer_pips: 5
+  fvg_min_gap: 2
+  lookback_bars: 150
+  volume_filter: true
+  session_time_filter: true
+
+symbols:
+  GBPJPY:
+    session: "Tokyo"
+    htf: 60
+    ctf: 5
+    pip_size: 0.01
+  EURUSD:
+    session: "London"
+    htf: 240
+    ctf: 15
+    pip_size: 0.0001
+  NAS100:
+    session: "NewYork"
+    htf: 60
+    ctf: 5
+    pip_size: 1.0
+
+logging:
+  level: INFO
+  to_file: true
+  file_path: "logs/smclassic.log"

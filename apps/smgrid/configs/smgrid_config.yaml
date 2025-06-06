@@ -1,0 +1,47 @@
+# File: configs/smgrid_config.yaml
+
+strategy:
+  name: smgrid
+  atr_period: 14                # ATR lookback period
+  atr_multiplier: 1.5           # Grid spacing = ATR * multiplier
+  grid_count: 3                 # Number of grid levels above/below base
+  reset_cycle: daily            # Options: daily or weekly
+  min_confidence: 0.0           # Retained for compatibility
+
+symbols:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+
+broker:
+  type: mt5
+  login: 12345678
+  password: your_password
+  server: MetaQuotes-Demo
+  path: "C:/Program Files/MetaTrader 5/terminal64.exe"
+
+risk:
+  account_currency: USD
+  risk_percent: 1.0
+  min_lot_size: 0.01
+  max_lot_size: 1.0
+  slippage: 5
+  atr_period: 14
+  atr_multiplier: 1.5
+
+portfolio:
+  max_open_trades: 3
+  max_exposure_per_symbol: 1.5
+  max_total_exposure: 3.0
+
+telegram:
+  enabled: true
+  bot_token: your_telegram_bot_token
+  chat_id: your_telegram_chat_id
+
+logging:
+  level: INFO
+  log_to_file: true
+  log_file: logs/smgrid.log
+
+poll_interval: 5

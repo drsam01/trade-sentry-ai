@@ -1,0 +1,45 @@
+# File: configs/smedge_config.yaml
+
+strategy: 
+  name: smedge
+  ctf_minutes: 5           # Confirmation timeframe (e.g., 5-minute)
+  htf_minutes: 60          # Higher timeframe (e.g., 1-hour)
+  min_confidence: 0.0      # Not used but retained for compatibility
+
+trading_plan:
+  - symbol: EURUSD
+  - symbol: GBPUSD
+  - symbol: USDJPY
+
+broker:
+  type: mt5
+  login: 12345678
+  password: your_password
+  server: MetaQuotes-Demo
+  path: "C:/Program Files/MetaTrader 5/terminal64.exe"
+
+risk:
+  account_currency: USD
+  risk_percent: 1.0               # Risk per trade
+  min_lot_size: 0.01
+  max_lot_size: 1.0
+  slippage: 5                     # Max allowed slippage in points
+  atr_period: 14
+  atr_multiplier: 1.5             # Used for SL/TP calculation
+
+portfolio:
+  max_open_trades: 3
+  max_exposure_per_symbol: 1.5   # Max volume per symbol
+  max_total_exposure: 3.0        # Portfolio-wide volume cap
+
+logging:
+  level: INFO
+  log_to_file: true
+  log_file: logs/smedge.log
+
+telegram:
+  enabled: true
+  bot_token: your_telegram_bot_token
+  chat_id: your_telegram_chat_id
+
+poll_interval: 5                 # Seconds between signal checks
