@@ -57,14 +57,14 @@ class DRLFusionStrategy(BaseStrategy):
         direction = "long" if filtered_action > 0 else "short"
         price = self.df["Close"].iloc[current_index]
         atr = self.df["ATR14"].iloc[current_index]
-        sl_mult = self.config.get("trading_params", {}).get("sl_atr_multiplier", 2.0)
-        rr_mult = self.config.get("trading_params", {}).get("rr_ratio", 2.0)
+        sl_mult = self.config.get("strategy", {}).get("sl_multiplier", 2.0)
+        rr_mult = self.config.get("strategy", {}).get("rr_ratio", 2.0)
         tp_mult = rr_mult * sl_mult
 
         sl = price - sl_mult * atr if direction == "long" else price + sl_mult * atr
         tp = price + tp_mult * atr if direction == "long" else price - tp_mult * atr
 
-        trailing_pips = self.config.get("trading_params", {}).get("trailing_stop", None)
+        trailing_pips = self.config.get("trailing_stop", {}).get("trail_pips", None)
         pip_value = self.config.get("pip_values", {}).get(self.config.get("symbol"), 0.0001)
 
         trailing_stop = trailing_pips * pip_value if trailing_pips else None
