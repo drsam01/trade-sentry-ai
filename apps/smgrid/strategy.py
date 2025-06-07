@@ -58,8 +58,8 @@ class SMGridStrategy(BaseStrategy):
         ):
             self.grid_levels = self.helper.get_grid_levels(new_midpoint, self.atr, count=self.grid_count) # type: ignore
             self.last_midpoint = new_midpoint
-
-    def generate_signal(self, current_index: int, injected_lot: Optional[float]) -> Optional[Dict[str, Any]]:
+    
+    def generate_signal(self, current_index: int) -> Optional[Dict[str, Any]]:
         """
         Generate signal based on current market regime.
 
@@ -67,64 +67,26 @@ class SMGridStrategy(BaseStrategy):
             current_index (int): Latest row index in the dataframe.
 
         Returns:
-            Optional[Dict[str, Any]]: A dictionary containing signal mode and order list.
+            Optional[Dict[str, Any]]: Dictionary with 'mode' and order(s) or None.
         """
-        if self.df.empty or current_index < 1: # type: ignore
+        if self.df.empty or current_index < 1:  # type: ignore
             return None
 
-        row = self.df.iloc[current_index] # type: ignore
+        row = self.df.iloc[current_index]  # type: ignore
+        required_fields = ["close"]
+        if any(field not in row for field in required_fields):
+            logger.warning("Missing required fields in data row.")
+            return None
+
         price = row["close"]
 
         if self.current_regime == "consolidation":
-            
-            grid_orders = []
-            for i, level in enumerate(self.grid_levels):
-                if self.atr is not None and abs(price - level) <= self.atr * 0.05:
-                    direction = "buy" if self.last_midpoint is not None and level < self.last_midpoint else "sell"
-                    tp = self._get_next_grid_tp(level, direction)
-                    
-                    # Compute SL: below for buy, above for sell
-                    sl = None
-                    if direction == "buy":
-                        sl = level - self.atr * self.config.get("risk", {}).get("atr_sl_multiplier", 1.5)
-                    elif direction == "sell":
-                        sl = level + self.atr * self.config.get("risk", {}).get("atr_sl_multiplier", 1.5)
-                    
-                    lot = injected_lot or self.config.get("risk", {}).get("default_lot", 0.01)
-                    
-                    grid_orders.append({
-                        "type": "limit",
-                        "direction": direction,
-                        "lot": lot,
-                        "price": level,
-                        "tp": tp,
-                        "sl": sl,
-                        "tag": f"grid_{i}",
-                    })
-            return {
-                "mode": "grid",
-                "orders": grid_orders
-            }
+            return self._generate_consolidation_signals()
 
         elif self.current_regime == "trending":
-            if direction := self.helper.detect_breakout_from_zone(
-                self.df[:current_index] # type: ignore
-            ):
-                sl, tp = self._get_sl_tp(price, direction)
-                lot = injected_lot or self.config.get("risk", {}).get("default_lot", 0.01)
-                return {
-                    "mode": "trend",
-                    "orders": {
-                        "type": "market",
-                        "direction": direction,
-                        "lot": lot,
-                        "price": price,
-                        "tp": tp,
-                        "sl": sl,
-                        "tag": "trend_breakout"                        
-                    }
-                }
+            return self._generate_trend_breakout_signal(current_index, price)
 
+        logger.warning(f"Unrecognized regime: {self.current_regime}")
         return None
 
     def generate_signals(self) -> List[Dict[str, Any]]:
@@ -136,32 +98,10 @@ class SMGridStrategy(BaseStrategy):
         """
         signals = []
         for idx in range(len(self.df)): # type: ignore
-            signal = self.generate_signal(current_index=idx, injected_lot=0.01)
+            signal = self.generate_signal(current_index=idx)
             signals.append(signal or {})
         return signals
-
-    def execute_trade(self, signal: Dict[str, Any]) -> None:
-        """
-        Record or process executed trade.
-
-        - For grid trades: remove the executed grid level from active grid levels.
-        - For trend trades: mark the trend as active or perform strategy-specific updates.
-
-        Args:
-            signal (Dict[str, Any]): Trade signal dictionary containing at least 'tag' and 'price'.
-        """
-        self.last_trade = signal
-        tag = signal.get("tag", "")
-        price = signal.get("price")
-
-        if tag.startswith("grid_"):
-            # Grid trade: remove filled level from grid
-            self.grid_levels = [lvl for lvl in self.grid_levels if lvl != price]
-            logger.info(f"[SMGrid] Executed grid trade at level {price}. Remaining grid levels: {self.grid_levels}")
-
-        elif tag == "trend_breakout" or tag.startswith("trend_"):
-            self._trend_trade_execution(price, signal)
-
+    
     async def log_performance(self, trade_tracker, symbol: str) -> None:
         """
         Log current strategy performance metrics.
@@ -185,16 +125,59 @@ class SMGridStrategy(BaseStrategy):
         self.trend_direction = None
         logger.info("[SMGridStrategy] Grid parameters reset.")
 
-    def _trend_trade_execution(self, price, signal):
-        # Trend trade: flag trend state or reset grid as needed
-        self.trend_active = True
-        self.trend_entry_price = price
-        self.trend_direction = signal.get("direction")
-        logger.info(f"[SMGrid] Executed trend breakout trade at {price} in direction {self.trend_direction}")
+    def _generate_consolidation_signals(self) -> Dict[str, Any]:
+        """
+        Generate limit orders for consolidation regime based on grid levels.
+        """
+        if self.last_midpoint is None or not self.grid_levels:
+            logger.warning("Cannot generate consolidation signals: Missing midpoint or grid levels.")
+            return {"mode": "grid", "orders": []}
 
-        # Optional: clear grid levels upon breakout
-        self.grid_levels = []
-        logger.debug("[SMGrid] Cleared grid levels after trend entry.")
+        spacing = getattr(self.helper, "spacing", None)
+        if spacing is None:
+            logger.warning("Spacing attribute not found in helper.")
+            spacing = 0.0010  # fallback or default
+
+        orders = []
+        for i, level in enumerate(self.grid_levels):
+            direction = "buy" if level < self.last_midpoint else "sell"
+            tp = self._get_next_grid_tp(level, direction)
+
+            orders.append({
+                "type": "limit",
+                "direction": direction,
+                "price": level,
+                "tp": tp,
+                "sl": None,  # SL may be applied later by risk or trailing logic
+                "spacing": spacing,
+                "tag": f"grid_{i}",
+            })
+
+        return {"mode": "grid", "orders": orders}
+
+    def _generate_trend_breakout_signal(self, current_index: int, price: float) -> Optional[Dict[str, Any]]:
+        """
+        Generate a market order signal if a trend breakout is detected.
+        """
+        direction = self.helper.detect_breakout_from_zone(self.df[:current_index])  # type: ignore
+        if not direction:
+            logger.info("No breakout direction detected.")
+            return None
+
+        sl, tp = self._get_sl_tp(price, direction)
+
+        return {
+            "mode": "trend",
+            "orders": {
+                "type": "market",
+                "direction": direction,
+                "price": price,
+                "tp": tp,
+                "sl": sl,
+                "spacing": abs(price - sl),
+                "tag": "trend_breakout"
+            }
+        }
 
     def _get_sl_tp(self, price: float, direction: str) -> Tuple[float, float]:
         """
@@ -208,7 +191,7 @@ class SMGridStrategy(BaseStrategy):
             Tuple[float, float]: (SL, TP) price levels.
         """
         atr = self.atr or 0.001
-        risk_multiplier = self.config.get("risk", {}).get("atr_sl_multiplier", 1.5)
+        risk_multiplier = self.config.get("risk", {}).get("sl_multiplier", 1.5)
         reward_multiplier = self.config.get("risk", {}).get("rr_ratio", 2.0)
 
         sl_offset = atr * risk_multiplier
@@ -226,30 +209,27 @@ class SMGridStrategy(BaseStrategy):
 
     def _get_next_grid_tp(self, price: float, direction: str) -> Optional[float]:
         """
-        Determines the TP level based on grid logic:
-        - For BUY: next level above current price.
-        - For SELL: next level below current price.
+        Determines the next take profit (TP) level based on grid logic:
+        - For BUY: returns the next level above the current price.
+        - For SELL: returns the next level below the current price.
 
         Args:
-            price (float): The price of the current grid level.
-            direction (str): "buy" or "sell"
+            price (float): The current price level.
+            direction (str): Trade direction ("buy" or "sell").
 
         Returns:
-            float: Next grid TP level, or None if at edge of grid.
+            Optional[float]: The next TP level, or None if at the edge.
         """
         if not self.grid_levels:
             return None
 
-        sorted_levels = sorted(self.grid_levels)
+        levels = sorted(self.grid_levels)
         
-        if direction == "buy":
-            for level in sorted_levels:
-                if level > price:
-                    return level
-        elif direction == "sell":
-            for level in reversed(sorted_levels):
-                if level < price:
-                    return level
+        if direction.lower() == "buy":
+            return next((lvl for lvl in levels if lvl > price), None)
+        
+        elif direction.lower() == "sell":
+            return next((lvl for lvl in reversed(levels) if lvl < price), None)
 
         # If no next level in direction (edge case)
         return None

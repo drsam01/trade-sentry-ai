@@ -99,14 +99,14 @@ class SMGridHelper:
         Returns:
             List[float]: Sorted list of levels
         """
-        spacing = atr * self.spacing_multiplier
+        self.spacing = atr * self.spacing_multiplier
         levels = []
 
         for i in range(1, count + 1):
             levels.extend(
                 (
-                    round(midpoint - spacing * i, 5), # Buy below
-                    round(midpoint + spacing * i, 5), # Sell above
+                    round(midpoint - self.spacing * i, 5), # Buy below
+                    round(midpoint + self.spacing * i, 5), # Sell above
                 )
             )
         return sorted(levels)

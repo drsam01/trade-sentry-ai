@@ -8,12 +8,15 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from .signal_models import validate_signal, GridSignal, TrendOrder, TrendSignal
+
 from core.broker.base_broker import BaseBroker
 from core.execution.order_manager import OrderManager
 from core.execution.risk_manager import RiskManager
 from core.execution.portfolio_manager import PortfolioManager
 from core.monitoring.trade_tracker import TradeTracker
 from core.monitoring.trade_watcher import TradeWatcher
+from core.utils.timeframe_aggregator import TimeframeAggregator
 from core.utils.logger import get_logger
 from core.utils.notifier import send_telegram_alert
 
@@ -44,6 +47,7 @@ class SMGridTrader:
         self.portfolio_manager = PortfolioManager(config["portfolio"])
         self.trade_tracker = TradeTracker()
         self.trade_watcher = TradeWatcher(self.risk_manager.apply_trailing_stop)
+        self.aggregator = TimeframeAggregator([self.timeframe])
         
         # Strategy
         self.strategy = SMGridStrategy(config)
@@ -71,9 +75,19 @@ class SMGridTrader:
                 logger.error(f"[{self.symbol}] Reconnection failed.")
                 return
         
-        bars = self.broker.fetch_ohlcv(self.symbol, self.timeframe, self.lookback)
-        df = pd.DataFrame(bars)
+        m1_bars = self.broker.fetch_ohlcv(self.symbol, "M1", self.lookback)
+        aggregated_bars = []
 
+        for bar in m1_bars:
+            result = self.aggregator.add_candle(bar)
+            aggregated_bars.extend(result.get(self.timeframe, []))
+
+        if len(aggregated_bars) < self.lookback:
+            logger.warning(f"[{self.symbol}] Not enough aggregated data.")
+            return
+
+        df = pd.DataFrame(aggregated_bars)
+        
         if df.empty or len(df) < self.lookback:
             logger.warning(f"[{self.symbol}] Insufficient data.")
             return
@@ -81,54 +95,61 @@ class SMGridTrader:
         # Load data into strategy and generate signal package
         self.strategy.load_data(df)
         
-        # Use RiskManager to compute dynamic lot size
-        atr = self.strategy.atr or 0.001  # fallback ATR
-        stop_loss_pips = atr / self.config["risk"].get("pip_value", 0.0001)
+        raw_signal = self.strategy.generate_signal(current_index=len(df) - 1)
+
+        if not raw_signal:
+            logger.debug(f"[{self.symbol}] No valid signal.")
+            return
+
+        signal = validate_signal(raw_signal)
+        if signal is None:
+            return
+
+        logger.info(f"[{self.symbol}] Strategy mode: {signal.mode.upper()}")
+
+        if isinstance(signal, TrendSignal):
+            # Cancel existing pending orders before placing new ones
+            await self.order_manager.cancel_all_pending_orders(self.symbol)
+            self._handle_trend_mode(signal.orders)
+
+        elif isinstance(signal, GridSignal):
+            self._handle_grid_mode(signal)
+
+        # Resolve direction from structured model
+        direction = None
+        if isinstance(signal, GridSignal) and signal.orders:
+            direction = signal.orders[0].direction
+        elif isinstance(signal, TrendSignal):
+            direction = signal.orders.direction
+
+        if direction is None:
+            logger.warning(f"[{self.symbol}] Cannot determine direction from validated signal: {signal}")
+            return
+
+        current_price = df["close"].iloc[-1]
+        await self.monitor_trades(current_price, direction)
+
+    def _handle_trend_mode(self, order: TrendOrder) -> None:
+        """
+        Execute market trade for trend breakout mode using a typed TrendOrder.
         
+        Args:
+            order (TrendOrder): Validated order for market execution.
+        """
+        direction = order.direction
+        sl = order.sl
+        tp = order.tp
+        price = order.price
+
+        stop_loss_pips = order.spacing / self.config["risk"].get("pip_value", 0.0001)
         lot = self.risk_manager.compute_lot_size(
             stop_loss_pips=stop_loss_pips,
             pip_value=self.config["risk"].get("pip_value", 0.0001),
             max_lot=self.config["risk"].get("max_lot", 1.0)
         )
-        
-        signal_package = self.strategy.generate_signal(current_index=len(df) - 1, injected_lot=lot)
 
-        if not signal_package:
-            logger.debug(f"[{self.symbol}] No valid signal.")
-            return
-        
-        mode = signal_package.get("mode", "unknown")
-        logger.info(f"[{self.symbol}] Strategy mode: {mode.upper()}")
-
-        if mode == "trend":
-            # Cancel existing pending orders before placing new ones
-            await self.order_manager.cancel_all_pending_orders(self.symbol)
-            self._handle_trend_mode(signal_package.get("orders", {}))
-        elif mode == "grid":
-            self._handle_grid_mode(signal_package)
-        else:
-            logger.warning(f"[{self.symbol}] Unrecognized mode in signal package: {mode}")
-
-        orders = signal_package.get("orders", [])
-        direction = orders[0].get("action") if orders else signal_package.get("orders",{})["direction"]
-        current_price = df["close"].iloc[-1]
-        await self.monitor_trades(current_price, direction)
-
-    def _handle_trend_mode(self, signal: Dict[str, Any]) -> None:
-        """
-        Execute market trade for trend breakout mode.
-
-        Args:
-            signal (Dict[str, Any]): Signal dict with direction, lot, sl, tp.
-        """        
-        direction = signal.get("direction","")
-        lot = signal.get("lot", 0.01)
-        sl = signal.get("sl")
-        tp = signal.get("tp")
-        price = signal.get("price")
-        
         if None in [direction, lot, sl, tp]:
-            logger.warning(f"[{self.symbol}] Incomplete signal: {signal}")
+            logger.warning(f"[{self.symbol}] Incomplete trend order: {order}")
             return
 
         if self.portfolio_manager.can_open_trade(self.symbol, lot):
@@ -140,50 +161,52 @@ class SMGridTrader:
                 tp=tp,
                 comment="SMGrid Trend Breakout"
             )
-            self.strategy.execute_trade(signal)            
+
             send_telegram_alert(f"🚀 SMGrid {direction.upper()} breakout trade on {self.symbol}")
-            
+
             if trade_id := result.get('order'):
                 trade_record = {
                     "symbol": self.symbol,
-                    "order_type": signal.get("type", "market"),
+                    "order_type": order.type,
                     "direction": direction,
                     "lot": lot,
                     "entry_price": price,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "tp": tp,
                     "sl": sl,
-                    "tag": signal.get("tag", "smgrid_trade"),
+                    "tag": order.tag or "smgrid_trade",
                     "strategy": "SMGrid",
                     "status": "open",
                     "ticket": trade_id
                 }
-                
-                self.trade_tracker.register_open_trade(
-                    trade_id=trade_id, # type: ignore
-                    trade_data=trade_record # type: ignore
-                )
+                self.trade_tracker.register_open_trade(trade_id=trade_id, trade_data=trade_record)
                 self.portfolio_manager.update_exposure(self.symbol, lot, direction)
         else:
             logger.info(f"[{self.symbol}] Trade blocked by portfolio constraints.")
 
-    def _handle_grid_mode(self, signal: Dict[str, Any]) -> None:
+    def _handle_grid_mode(self, signal: GridSignal) -> None:
         """
-        Place grid-based pending orders around the base price.
+        Place grid-based pending orders using validated GridSignal.
 
         Args:
-            signal (Dict[str, Any]): Signal dict with pending grid orders.
+            signal (GridSignal): Contains a list of limit orders.
         """
-        for order in signal.get("orders", []):
-            lot = order["lot"]
-            direction = order["direction"]
-            price = order["price"]
-            tp = order["tp"]
-            tag = order.get("tag", "grid_order")
-            
+        for order in signal.orders:
+            spacing = order.spacing or 0.0010  # fallback if spacing is missing
+
+            stop_loss_pips = spacing / self.config["risk"].get("pip_value", 0.0001)
+            lot = self.risk_manager.compute_lot_size(
+                stop_loss_pips=stop_loss_pips,
+                pip_value=self.config["risk"].get("pip_value", 0.0001),
+                max_lot=self.config["risk"].get("max_lot", 1.0)
+            )
+
             if self.portfolio_manager.can_open_trade(self.symbol, lot):
-                order_type = "buy_limit" if order["direction"] == "buy" else "sell_limit"
-                
+                direction = order.direction
+                order_type = "buy_limit" if direction == "buy" else "sell_limit"
+
+                price = order.price
+                tp = order.tp
                 result = self.order_manager.open_pending_order(
                     symbol=self.symbol,
                     order_type=order_type,
@@ -193,8 +216,9 @@ class SMGridTrader:
                     tp=tp,
                     comment="SMGrid Grid Order"
                 )
-                
+
                 if trade_id := result.get('order'):
+                    tag = order.tag or "grid_order"
                     trade_record = {
                         "symbol": self.symbol,
                         "order_type": order_type,
@@ -209,14 +233,12 @@ class SMGridTrader:
                         "status": "pending",
                         "ticket": trade_id
                     }
-                    self.trade_tracker.register_open_trade(
-                        trade_id=trade_id, # type: ignore
-                        trade_data=trade_record # type: ignore
-                    )
+                    self.trade_tracker.register_open_trade(trade_id=trade_id, trade_data=trade_record)
                     self.portfolio_manager.update_exposure(self.symbol, lot, direction)
             else:
                 logger.info(f"[{self.symbol}] Skipping grid order due to exposure limit.")
 
+    
     async def monitor_trades(self, current_price: float, direction: str) -> None:
         """
         Monitor existing trades for SL/TP and apply trailing logic.
